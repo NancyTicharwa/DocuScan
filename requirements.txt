@@ -1,0 +1,6 @@
+transformers
+pytesseract
+torch
+torchvision
+pdf2image
+Pillow
