@@ -188,7 +188,7 @@ class VideoTransformer(VideoTransformerBase):
 
 
 # Streamlit app
-st.title("Document Information Extraction and Segmentation with Camera Input")
+st.title("Document Segmentation and Information Extraction with Camera Input")
 
 # Option to upload document or use camera
 option = st.selectbox(
