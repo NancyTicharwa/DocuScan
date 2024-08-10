@@ -8,4 +8,7 @@ qrcode
 reportlab
 pdf2image
 pillow
-opencv-python-headless
+opencv-python
+xlsxwriter
+streamlit-webrtc
+textblob
