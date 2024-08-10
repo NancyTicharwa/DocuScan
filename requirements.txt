@@ -12,5 +12,5 @@ opencv-python
 xlsxwriter
 streamlit-webrtc
 textblob
-poppler
+poppler-utils
 streamlit-drawable-canvas
