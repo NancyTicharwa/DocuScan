@@ -8,9 +8,9 @@ qrcode
 reportlab
 pdf2image
 pillow
-opencv-python
 xlsxwriter
 streamlit-webrtc
 textblob
 poppler-utils
 streamlit-drawable-canvas
+opencv-python-headless
