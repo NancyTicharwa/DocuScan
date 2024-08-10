@@ -219,7 +219,7 @@ elif option == "Scan Document with External Camera (Phone)":
     st.write("Scan the QR code below with your phone to open the camera:")
     
     # Generate QR code
-    public_url = "https://your-public-streamlit-app-url"  # Replace with your public Streamlit app URL
+    public_url = "https://docuscanapp.streamlit.app/"  # Replace with your public Streamlit app URL
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_L,
