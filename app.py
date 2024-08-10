@@ -1,4 +1,4 @@
-pip install pytesseract
+uv pip install
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
 import pytesseract
