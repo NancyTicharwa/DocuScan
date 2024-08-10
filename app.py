@@ -19,6 +19,7 @@ import qrcode
 model = LayoutLMForTokenClassification.from_pretrained("microsoft/layoutlm-base-uncased")
 tokenizer = LayoutLMTokenizer.from_pretrained("microsoft/layoutlm-base-uncased")
 
+
 # Function to classify entities based on custom rules
 def classify_entity(word, label):
     if "ADDR" in label:
@@ -35,6 +36,7 @@ def classify_entity(word, label):
         return "Item"
     else:
         return "Other"
+
 
 # Function to extract and segment entities
 def extract_and_segment_entities(image):
@@ -83,15 +85,16 @@ def extract_and_segment_entities(image):
         try:
             # Fallback processing code
             image = process_with_fallback(image)  # Process the image using fallback method
-            
+
             # Display the fallback processed document
             st.image(image, caption="Fallback Processed Document", use_column_width=True)
-            
+
             # Re-run the original process on the newly processed image
             return extract_and_segment_entities(image)
         except Exception as fallback_error:
             st.error(f"Both the original and fallback OCR processes failed. Error: {fallback_error}")
             return {}, []  # Return empty results to indicate failure
+
 
 # Fallback processing function
 def process_with_fallback(image):
@@ -100,6 +103,7 @@ def process_with_fallback(image):
     image = image.convert("L")  # Convert to grayscale as an example
     image = image.point(lambda x: 0 if x < 128 else 255, '1')  # Simple thresholding
     return image
+
 
 # Function to draw boxes on image with color coding and transparency
 def draw_segmented_boxes(image, segments, fill=False):
@@ -139,19 +143,21 @@ def draw_segmented_boxes(image, segments, fill=False):
 
     return image
 
+
 # Function to load PDF as images
 def load_images_from_pdf(uploaded_pdf):
     try:
         with NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
             temp_pdf.write(uploaded_pdf.read())
             temp_pdf_path = temp_pdf.name
-        
+
         images = convert_from_path(temp_pdf_path)
         os.remove(temp_pdf_path)  # Clean up the temporary file after conversion
         return images
     except Exception as e:
         st.error(f"Failed to load PDF: {e}")
         return []
+
 
 # Function to convert text to PDF using ReportLab
 def convert_text_to_pdf(text):
@@ -169,6 +175,7 @@ def convert_text_to_pdf(text):
     buffer.seek(0)
     return buffer
 
+
 # Video processing class for camera input
 class VideoTransformer(VideoTransformerBase):
     def __init__(self):
@@ -179,27 +186,40 @@ class VideoTransformer(VideoTransformerBase):
         self.image = img
         return img
 
+
 # Streamlit app
 st.title("Document Information Extraction and Segmentation with Camera Input")
 
 # Option to upload document or use camera
 option = st.selectbox(
     "Choose how to provide the document:",
-    ("Upload Document", "Scan Document with Internal Camera", "Scan Document with External Camera (Phone)")
+    ("Upload Documents", "Scan Document with Internal Camera", "Scan Document with External Camera (Phone)",
+     "Upload Images from Phone")
 )
 
 # Initialize variables
-image = None
+images = []
 
-if option == "Upload Document":
-    uploaded_file = st.file_uploader("Upload a document", type=["png", "jpg", "jpeg", "pdf"])
-    if uploaded_file is not None:
-        if uploaded_file.type == "application/pdf":
-            images = load_images_from_pdf(uploaded_file)
-            if images:
-                image = images[0]  # Process only the first page for simplicity
-        else:
+if option == "Upload Documents":
+    uploaded_files = st.file_uploader("Upload multiple documents", type=["png", "jpg", "jpeg", "pdf"],
+                                      accept_multiple_files=True)
+    if uploaded_files:
+        for uploaded_file in uploaded_files:
+            if uploaded_file.type == "application/pdf":
+                pdf_images = load_images_from_pdf(uploaded_file)
+                if pdf_images:
+                    images.extend(pdf_images)  # Add all pages to the images list
+            else:
+                image = Image.open(uploaded_file)
+                images.append(image)
+
+elif option == "Upload Images from Phone":
+    uploaded_files = st.file_uploader("Upload multiple images directly from your phone", type=["png", "jpg", "jpeg"],
+                                      accept_multiple_files=True)
+    if uploaded_files:
+        for uploaded_file in uploaded_files:
             image = Image.open(uploaded_file)
+            images.append(image)
 
 elif option == "Scan Document with Internal Camera":
     st.write("Use the internal camera to scan the document.")
@@ -214,12 +234,13 @@ elif option == "Scan Document with Internal Camera":
             img_array = webrtc_ctx.video_transformer.image
             if img_array is not None:
                 image = Image.fromarray(cv2.cvtColor(img_array, cv2.COLOR_BGR2RGB))
+                images.append(image)
 
 elif option == "Scan Document with External Camera (Phone)":
     st.write("Scan the QR code below with your phone to open the camera:")
-    
+
     # Generate QR code
-    public_url = "https://docuscanapp.streamlit.app/"  # Replace with your public Streamlit app URL
+    public_url = "https://your-public-streamlit-app-url"  # Replace with your public Streamlit app URL
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_L,
@@ -242,29 +263,32 @@ elif option == "Scan Document with External Camera (Phone)":
     if st.button("Capture Document from Phone"):
         st.write("Use your phone to scan the document and upload it here.")
 
-if image is not None:
+# Process each uploaded image/document
+for i, image in enumerate(images):
+    st.write(f"### Document {i + 1}")
+
     segments, extracted_words = extract_and_segment_entities(image)
-    
+
     if not segments:
-        st.error("No text detected in the document. Please try scanning again.")
+        st.error(f"No text detected in Document {i + 1}. Please try scanning again.")
     else:
         col1, col2, col3 = st.columns(3)
 
         with col1:
             st.header("Original Document")
-            st.image(image, caption='Uploaded/Scanned Document', use_column_width=True)
+            st.image(image, caption=f'Document {i + 1}', use_column_width=True)
 
         with col2:
             st.header("Segmented Document")
             filled_annotated_image = image.copy()
             filled_annotated_image = draw_segmented_boxes(filled_annotated_image, segments, fill=True)
-            st.image(filled_annotated_image, caption="Segmented Document", use_column_width=True)
+            st.image(filled_annotated_image, caption=f"Segmented Document {i + 1}", use_column_width=True)
 
         with col3:
             st.header("Segmented Details")
             annotated_image = image.copy()
             annotated_image = draw_segmented_boxes(annotated_image, segments, fill=False)
-            st.image(annotated_image, caption="Segmented Details", use_column_width=True)
+            st.image(annotated_image, caption=f"Segmented Details {i + 1}", use_column_width=True)
 
         st.header("Extracted OCR Text")
 
@@ -283,8 +307,9 @@ if image is not None:
         # Dropdown for download options
         st.subheader("Download Extracted OCR Text")
         download_option = st.selectbox(
-            "Choose download format",
-            ("Text", "PDF", "Excel")
+            f"Choose download format for Document {i + 1}",
+            ("Text", "PDF", "Excel"),
+            key=f"download_option_{i}"
         )
 
         if download_option == "Text":
@@ -293,7 +318,7 @@ if image is not None:
             st.download_button(
                 label="Download as Text",
                 data=text_bytes,
-                file_name="extracted_text.txt",
+                file_name=f"extracted_text_document_{i + 1}.txt",
                 mime="text/plain"
             )
 
@@ -303,7 +328,7 @@ if image is not None:
             st.download_button(
                 label="Download as PDF",
                 data=pdf_buffer,
-                file_name="extracted_text.pdf",
+                file_name=f"extracted_text_document_{i + 1}.pdf",
                 mime="application/pdf"
             )
 
@@ -317,6 +342,6 @@ if image is not None:
             st.download_button(
                 label="Download as Excel",
                 data=excel_buffer,
-                file_name="extracted_text.xlsx",
+                file_name=f"extracted_text_document_{i + 1}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
