@@ -8,4 +8,4 @@ qrcode
 reportlab
 pdf2image
 pillow
-opencv-python
+opencv-python-headless
