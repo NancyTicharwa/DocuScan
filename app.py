@@ -6,6 +6,8 @@ import torch
 from pdf2image import convert_from_path
 import pandas as pd
 import io
+import os
+from tempfile import NamedTemporaryFile
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 import cv2
@@ -16,7 +18,6 @@ import qrcode
 # Load model and tokenizer
 model = LayoutLMForTokenClassification.from_pretrained("microsoft/layoutlm-base-uncased")
 tokenizer = LayoutLMTokenizer.from_pretrained("microsoft/layoutlm-base-uncased")
-
 
 # Function to classify entities based on custom rules
 def classify_entity(word, label):
@@ -34,7 +35,6 @@ def classify_entity(word, label):
         return "Item"
     else:
         return "Other"
-
 
 # Function to extract and segment entities
 def extract_and_segment_entities(image):
@@ -83,16 +83,15 @@ def extract_and_segment_entities(image):
         try:
             # Fallback processing code
             image = process_with_fallback(image)  # Process the image using fallback method
-
+            
             # Display the fallback processed document
             st.image(image, caption="Fallback Processed Document", use_column_width=True)
-
+            
             # Re-run the original process on the newly processed image
             return extract_and_segment_entities(image)
         except Exception as fallback_error:
             st.error(f"Both the original and fallback OCR processes failed. Error: {fallback_error}")
             return {}, []  # Return empty results to indicate failure
-
 
 # Fallback processing function
 def process_with_fallback(image):
@@ -101,7 +100,6 @@ def process_with_fallback(image):
     image = image.convert("L")  # Convert to grayscale as an example
     image = image.point(lambda x: 0 if x < 128 else 255, '1')  # Simple thresholding
     return image
-
 
 # Function to draw boxes on image with color coding and transparency
 def draw_segmented_boxes(image, segments, fill=False):
@@ -141,12 +139,19 @@ def draw_segmented_boxes(image, segments, fill=False):
 
     return image
 
-
 # Function to load PDF as images
-def load_image_from_pdf(pdf_path):
-    images = convert_from_path(pdf_path)
-    return images
-
+def load_images_from_pdf(uploaded_pdf):
+    try:
+        with NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
+            temp_pdf.write(uploaded_pdf.read())
+            temp_pdf_path = temp_pdf.name
+        
+        images = convert_from_path(temp_pdf_path)
+        os.remove(temp_pdf_path)  # Clean up the temporary file after conversion
+        return images
+    except Exception as e:
+        st.error(f"Failed to load PDF: {e}")
+        return []
 
 # Function to convert text to PDF using ReportLab
 def convert_text_to_pdf(text):
@@ -164,7 +169,6 @@ def convert_text_to_pdf(text):
     buffer.seek(0)
     return buffer
 
-
 # Video processing class for camera input
 class VideoTransformer(VideoTransformerBase):
     def __init__(self):
@@ -174,7 +178,6 @@ class VideoTransformer(VideoTransformerBase):
         img = frame.to_ndarray(format="bgr24")
         self.image = img
         return img
-
 
 # Streamlit app
 st.title("Document Information Extraction and Segmentation with Camera Input")
@@ -192,8 +195,9 @@ if option == "Upload Document":
     uploaded_file = st.file_uploader("Upload a document", type=["png", "jpg", "jpeg", "pdf"])
     if uploaded_file is not None:
         if uploaded_file.type == "application/pdf":
-            images = load_image_from_pdf(uploaded_file)
-            image = images[0]
+            images = load_images_from_pdf(uploaded_file)
+            if images:
+                image = images[0]  # Process only the first page for simplicity
         else:
             image = Image.open(uploaded_file)
 
@@ -213,9 +217,9 @@ elif option == "Scan Document with Internal Camera":
 
 elif option == "Scan Document with External Camera (Phone)":
     st.write("Scan the QR code below with your phone to open the camera:")
-
+    
     # Generate QR code
-    public_url = "https://docuscanapp.streamlit.app/"  # Replace with your public Streamlit app URL
+    public_url = "https://your-public-streamlit-app-url"  # Replace with your public Streamlit app URL
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_L,
@@ -240,7 +244,7 @@ elif option == "Scan Document with External Camera (Phone)":
 
 if image is not None:
     segments, extracted_words = extract_and_segment_entities(image)
-
+    
     if not segments:
         st.error("No text detected in the document. Please try scanning again.")
     else:
