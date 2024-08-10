@@ -4,3 +4,7 @@ torch
 torchvision
 pdf2image
 Pillow
+qrcode
+reportlab
+pdf2image
+pillow
