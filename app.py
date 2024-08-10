@@ -38,41 +38,69 @@ def classify_entity(word, label):
 
 # Function to extract and segment entities
 def extract_and_segment_entities(image):
-    data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
-    words = data['text']
+    try:
+        data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
+        words = data['text']
 
-    encoding = tokenizer(words, is_split_into_words=True, return_tensors="pt", padding=True, truncation=True)
-    input_ids = encoding.input_ids
-    attention_mask = encoding.attention_mask
+        if not words or all(word.strip() == '' for word in words):
+            raise ValueError("No text detected, switching to fallback processing.")
 
-    outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-    logits = outputs.logits
+        encoding = tokenizer(words, is_split_into_words=True, return_tensors="pt", padding=True, truncation=True)
+        input_ids = encoding.input_ids
+        attention_mask = encoding.attention_mask
 
-    predictions = torch.argmax(logits, dim=2).tolist()[0]
+        outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+        logits = outputs.logits
 
-    # Initialize segments dictionary
-    segments = {
-        "Address": [],
-        "Date": [],
-        "Total": [],
-        "Item": [],
-        "Price": [],
-        "Name": [],
-        "Other": []
-    }
+        predictions = torch.argmax(logits, dim=2).tolist()[0]
 
-    for i, word in enumerate(words):
-        label = model.config.id2label[predictions[i]]
-        if word:
-            category = classify_entity(word, label)
-            entity = {
-                "word": word,
-                "label": category,
-                "box": (data['left'][i], data['top'][i], data['width'][i], data['height'][i])
-            }
-            segments[category].append(entity)
+        # Initialize segments dictionary
+        segments = {
+            "Address": [],
+            "Date": [],
+            "Total": [],
+            "Item": [],
+            "Price": [],
+            "Name": [],
+            "Other": []
+        }
 
-    return segments, words
+        for i, word in enumerate(words):
+            label = model.config.id2label[predictions[i]]
+            if word.strip():  # Ensure it's not an empty word
+                category = classify_entity(word, label)
+                entity = {
+                    "word": word,
+                    "label": category,
+                    "box": (data['left'][i], data['top'][i], data['width'][i], data['height'][i])
+                }
+                segments[category].append(entity)
+
+        return segments, words
+
+    except Exception as e:
+        st.warning(f"Original OCR process failed with error: {e}. Trying fallback processing...")
+        try:
+            # Fallback processing code
+            image = process_with_fallback(image)  # Process the image using fallback method
+
+            # Display the fallback processed document
+            st.image(image, caption="Fallback Processed Document", use_column_width=True)
+
+            # Re-run the original process on the newly processed image
+            return extract_and_segment_entities(image)
+        except Exception as fallback_error:
+            st.error(f"Both the original and fallback OCR processes failed. Error: {fallback_error}")
+            return {}, []  # Return empty results to indicate failure
+
+
+# Fallback processing function
+def process_with_fallback(image):
+    # Placeholder for actual fallback processing logic, e.g., image pre-processing, enhancement, etc.
+    st.write("Applying fallback processing...")
+    image = image.convert("L")  # Convert to grayscale as an example
+    image = image.point(lambda x: 0 if x < 128 else 255, '1')  # Simple thresholding
+    return image
 
 
 # Function to draw boxes on image with color coding and transparency
@@ -178,7 +206,7 @@ elif option == "Scan Document with Internal Camera":
     )
 
     if webrtc_ctx.video_transformer:
-        if st.button("Capture Image"):
+        if st.button("Capture Document"):
             img_array = webrtc_ctx.video_transformer.image
             if img_array is not None:
                 image = Image.fromarray(cv2.cvtColor(img_array, cv2.COLOR_BGR2RGB))
@@ -207,78 +235,84 @@ elif option == "Scan Document with External Camera (Phone)":
 
     st.write("Once you scan the QR code, use your phone's browser to capture the document image.")
 
+    if st.button("Capture Document from Phone"):
+        st.write("Use your phone to scan the document and upload it here.")
+
 if image is not None:
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.header("Original Document")
-        st.image(image, caption='Uploaded/Scanned Document', use_column_width=True)
-
     segments, extracted_words = extract_and_segment_entities(image)
 
-    with col2:
-        st.header("Segmented Document")
-        filled_annotated_image = image.copy()
-        filled_annotated_image = draw_segmented_boxes(filled_annotated_image, segments, fill=True)
-        st.image(filled_annotated_image, caption="Segmented Document", use_column_width=True)
+    if not segments:
+        st.error("No text detected in the document. Please try scanning again.")
+    else:
+        col1, col2, col3 = st.columns(3)
 
-    with col3:
-        st.header("Segmented Details")
-        annotated_image = image.copy()
-        annotated_image = draw_segmented_boxes(annotated_image, segments, fill=False)
-        st.image(annotated_image, caption="Segmented Details", use_column_width=True)
+        with col1:
+            st.header("Original Document")
+            st.image(image, caption='Uploaded/Scanned Document', use_column_width=True)
 
-    st.header("Extracted OCR Text")
+        with col2:
+            st.header("Segmented Document")
+            filled_annotated_image = image.copy()
+            filled_annotated_image = draw_segmented_boxes(filled_annotated_image, segments, fill=True)
+            st.image(filled_annotated_image, caption="Segmented Document", use_column_width=True)
 
-    # Displaying the extracted text with a scrollable container
-    formatted_text = "\n".join(extracted_words)
+        with col3:
+            st.header("Segmented Details")
+            annotated_image = image.copy()
+            annotated_image = draw_segmented_boxes(annotated_image, segments, fill=False)
+            st.image(annotated_image, caption="Segmented Details", use_column_width=True)
 
-    st.markdown(
-        f"""
-        <div style='max-height: 200px; overflow-y: scroll; padding: 5px; background-color: #f9f9f9; border-radius: 5px;'>
-            <pre style='font-size: 16px; font-family: Arial, sans-serif; white-space: pre-wrap;'>{formatted_text}</pre>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+        st.header("Extracted OCR Text")
 
-    # Dropdown for download options
-    st.subheader("Download Extracted OCR Text")
-    download_option = st.selectbox(
-        "Choose download format",
-        ("Text", "PDF", "Excel")
-    )
+        # Displaying the extracted text with a scrollable container
+        formatted_text = "\n".join(extracted_words)
 
-    if download_option == "Text":
-        # Convert text to bytes for download
-        text_bytes = formatted_text.encode('utf-8')
-        st.download_button(
-            label="Download as Text",
-            data=text_bytes,
-            file_name="extracted_text.txt",
-            mime="text/plain"
+        st.markdown(
+            f"""
+            <div style='max-height: 200px; overflow-y: scroll; padding: 5px; background-color: #f9f9f9; border-radius: 5px;'>
+                <pre style='font-size: 16px; font-family: Arial, sans-serif; white-space: pre-wrap;'>{formatted_text}</pre>
+            </div>
+            """,
+            unsafe_allow_html=True
         )
 
-    elif download_option == "PDF":
-        # Convert text to PDF using ReportLab
-        pdf_buffer = convert_text_to_pdf(formatted_text)
-        st.download_button(
-            label="Download as PDF",
-            data=pdf_buffer,
-            file_name="extracted_text.pdf",
-            mime="application/pdf"
+        # Dropdown for download options
+        st.subheader("Download Extracted OCR Text")
+        download_option = st.selectbox(
+            "Choose download format",
+            ("Text", "PDF", "Excel")
         )
 
-    elif download_option == "Excel":
-        # Convert text to Excel using openpyxl engine
-        df = pd.DataFrame({"Extracted Text": extracted_words})
-        excel_buffer = io.BytesIO()
-        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False)
-        excel_buffer.seek(0)
-        st.download_button(
-            label="Download as Excel",
-            data=excel_buffer,
-            file_name="extracted_text.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        if download_option == "Text":
+            # Convert text to bytes for download
+            text_bytes = formatted_text.encode('utf-8')
+            st.download_button(
+                label="Download as Text",
+                data=text_bytes,
+                file_name="extracted_text.txt",
+                mime="text/plain"
+            )
+
+        elif download_option == "PDF":
+            # Convert text to PDF using ReportLab
+            pdf_buffer = convert_text_to_pdf(formatted_text)
+            st.download_button(
+                label="Download as PDF",
+                data=pdf_buffer,
+                file_name="extracted_text.pdf",
+                mime="application/pdf"
+            )
+
+        elif download_option == "Excel":
+            # Convert text to Excel using openpyxl engine
+            df = pd.DataFrame({"Extracted Text": extracted_words})
+            excel_buffer = io.BytesIO()
+            with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False)
+            excel_buffer.seek(0)
+            st.download_button(
+                label="Download as Excel",
+                data=excel_buffer,
+                file_name="extracted_text.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
